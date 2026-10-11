@@ -44,6 +44,7 @@ def main():
                         help="Generate measurements for GPU pods (uses kata-cc-nvidia-gpu.initrd "
                         "and GPU-specific cmdline). When used with --kernel-cmdline, picks the "
                         "GPU initrd. Without --kernel-cmdline, auto-generates both GPU and non-GPU.")
+    parser.add_argument("--ovmf", help="Path to the CVM's OVMF firmware binary")
     parser.add_argument("--initdata", action="append", dest="initdata_paths",
                         help="Path to initdata.toml for hash computation (repeatable)")
 
@@ -92,7 +93,11 @@ def main():
         kwargs = {"tee": args.tee, "authfile": args.authfile}
         if args.mirror_registry:
             kwargs["mirror_registry"] = args.mirror_registry
-        if args.platform == "baremetal":
+        if args.platform == "cvm":
+            if not args.ovmf:
+                parser.error("--platform cvm requires --ovmf")
+            kwargs["ovmf"] = args.ovmf
+        elif args.platform == "baremetal":
             if args.ocp_versions:
                 kwargs["ocp_versions"] = args.ocp_versions
             kwargs["kernel_cmdline"] = args.kernel_cmdline
