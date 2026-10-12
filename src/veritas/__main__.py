@@ -12,8 +12,42 @@ log = logging.getLogger(__name__)
 
 RVPS_FILENAME = "rvps-reference-values.yaml"
 
+SIZE_SUFFIXES = {
+    "": 1,
+    "k": 1000,
+    "m": 1000 ** 2,
+    "g": 1000 ** 3,
+    "t": 1000 ** 4,
+    "ki": 1024,
+    "mi": 1024 ** 2,
+    "gi": 1024 ** 3,
+    "ti": 1024 ** 4,
+}
+
+
+def parse_size(text: str) -> int:
+    """Convert a size such as ``12Gi`` or ``20G`` into a number of bytes."""
+    value = text.strip()
+    if value[-1:].lower() == "b":
+        value = value[:-1]
+    digits = value.rstrip("KkMmGgTtIi")
+    suffix = value[len(digits):].lower()
+    if not digits.isdigit() or suffix not in SIZE_SUFFIXES:
+        raise argparse.ArgumentTypeError(
+            f"invalid size {text!r}; use a value such as 12Gi or 20G"
+        )
+    size = int(digits) * SIZE_SUFFIXES[suffix]
+    if size == 0:
+        raise argparse.ArgumentTypeError("disk size must be greater than zero")
+    if size % 512:
+        raise argparse.ArgumentTypeError(
+            "disk size must be divisible by 512 bytes"
+        )
+    return size
+
 
 def main():
+    """Read command-line options, extract reference values, and write the output file."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", required=True, choices=EXTRACTORS.keys())
     parser.add_argument("--tee", default="tdx", choices=["tdx", "snp"])
@@ -45,6 +79,11 @@ def main():
                         "and GPU-specific cmdline). When used with --kernel-cmdline, picks the "
                         "GPU initrd. Without --kernel-cmdline, auto-generates both GPU and non-GPU.")
     parser.add_argument("--ovmf", help="Path to the CVM's OVMF firmware binary")
+    parser.add_argument("--guest-image",
+                        help="Path to the CVM guest disk image used to predict RTMR1")
+    parser.add_argument("--disk-size", type=parse_size,
+                        help="Guest disk size after its GPT was expanded, for example "
+                        "12Gi. Use only when expansion happened before the measured boot.")
     parser.add_argument("--initdata", action="append", dest="initdata_paths",
                         help="Path to initdata.toml for hash computation (repeatable)")
 
@@ -96,7 +135,12 @@ def main():
         if args.platform == "cvm":
             if not args.ovmf:
                 parser.error("--platform cvm requires --ovmf")
+            if args.disk_size is not None and not args.guest_image:
+                parser.error("--disk-size requires --guest-image")
             kwargs["ovmf"] = args.ovmf
+            kwargs["guest_image"] = args.guest_image
+            if args.disk_size is not None:
+                kwargs["disk_size"] = args.disk_size
         elif args.platform == "baremetal":
             if args.ocp_versions:
                 kwargs["ocp_versions"] = args.ocp_versions

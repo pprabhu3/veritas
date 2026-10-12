@@ -8,6 +8,7 @@ dynamic = ["version"]
 description = "Reference value extraction for CoCo attestation"
 authors = [{name = "Beraldo Leal", email = "bleal@redhat.com"}]
 requires-python = ">=3.11"
+dependencies = ["lief>=1.0,<2"]
 license = "Apache-2.0"
 
 [project.scripts]
