@@ -4,7 +4,7 @@ from pathlib import Path
 
 from veritas.models import ReferenceValue
 from veritas.platforms.base import PlatformExtractor
-from veritas.tcg.bootchain import measure_rtmr1
+from veritas.tcg.bootchain import measure_rtmrs
 from veritas.vendor.td_shim_tee_info_hash import compute_mrtd
 
 
@@ -33,7 +33,7 @@ class CvmExtractor(PlatformExtractor):
         return self.tee
 
     def reference_key_names(self) -> set[str]:
-        return {"mr_td", "rtmr_1", "xfam"}
+        return {"mr_td", "rtmr_1", "rtmr_2", "xfam"}
 
     def extract(self) -> list[ReferenceValue]:
         if not self.ovmf:
@@ -59,12 +59,14 @@ class CvmExtractor(PlatformExtractor):
             if not self.guest_image.is_file():
                 raise RuntimeError(f"Guest image not found: {self.guest_image}")
             try:
-                rtmr_1 = measure_rtmr1(
+                rtmr_1, rtmr_2 = measure_rtmrs(
                     self.guest_image,
                     disk_size=self.disk_size,
                 )
             except (OSError, ValueError) as exc:
-                raise RuntimeError(f"Failed to compute rtmr_1: {exc}") from exc
+                raise RuntimeError(
+                    f"Failed to compute rtmr_1/rtmr_2: {exc}"
+                ) from exc
             values.append(ReferenceValue(
                 name="rtmr_1",
                 values=[rtmr_1.hex()],
@@ -72,6 +74,14 @@ class CvmExtractor(PlatformExtractor):
                 description="Measured guest boot chain",
                 algorithm="sha384",
                 source=f"predicted boot chain of {self.guest_image.name}",
+            ))
+            values.append(ReferenceValue(
+                name="rtmr_2",
+                values=[rtmr_2.hex()],
+                category="executables",
+                description="Measured shim Machine Owner Key state",
+                algorithm="sha384",
+                source=f"predicted MOK state from {self.guest_image.name}",
             ))
 
         return values

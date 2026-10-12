@@ -80,7 +80,7 @@ def main():
                         "GPU initrd. Without --kernel-cmdline, auto-generates both GPU and non-GPU.")
     parser.add_argument("--ovmf", help="Path to the CVM's OVMF firmware binary")
     parser.add_argument("--guest-image",
-                        help="Path to the CVM guest disk image used to predict RTMR1")
+                        help="Path to the CVM guest disk image used to predict RTMRs")
     parser.add_argument("--disk-size", type=parse_size,
                         help="Guest disk size after its GPT was expanded, for example "
                         "12Gi. Use only when expansion happened before the measured boot.")

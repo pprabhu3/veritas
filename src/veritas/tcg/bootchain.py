@@ -1,4 +1,4 @@
-"""Predict RTMR1 for a UEFI disk boot."""
+"""Predict RTMR values for a UEFI disk boot."""
 
 import hashlib
 import shutil
@@ -8,6 +8,7 @@ from pathlib import Path
 
 from veritas.tcg.gpt import partition_table_event
 from veritas.tcg.pe import authenticode_digest
+from veritas.tcg.shim import mok_digests
 
 ESP = "/boot/efi/EFI"
 
@@ -62,21 +63,49 @@ def _download(image: Path, paths: list[str]) -> list[bytes]:
         return [path.read_bytes() for path in destinations]
 
 
-def measure_rtmr1(image: Path, disk_size: int | None = None) -> bytes:
-    """Predict RTMR1 by replaying the expected EFI boot measurements."""
+def _extend(digests: list[bytes]) -> bytes:
+    """Replay a list of SHA-384 event digests into an RTMR value."""
+    value = bytes(48)
+    for digest in digests:
+        if len(digest) != 48:
+            raise ValueError("RTMR event digest must contain 48 bytes")
+        value = hashlib.sha384(value + digest).digest()
+    return value
+
+
+def _measure_rtmr1(image: Path, disk_size: int | None,
+                   programs: list[bytes]) -> bytes:
+    """Replay the GPT and EFI application events into RTMR1."""
     digests = [
         hashlib.sha384(b"Calling EFI Application from Boot Option").digest(),
         hashlib.sha384(bytes(4)).digest(),
         hashlib.sha384(partition_table_event(image, disk_size)).digest(),
     ]
     digests.extend(authenticode_digest(data)
-                   for data in _download(image, _bootloader_paths(image)))
+                   for data in programs)
     digests.extend([
         hashlib.sha384(b"Exit Boot Services Invocation").digest(),
         hashlib.sha384(b"Exit Boot Services Returned with Success").digest(),
     ])
 
-    value = bytes(48)
-    for digest in digests:
-        value = hashlib.sha384(value + digest).digest()
-    return value
+    return _extend(digests)
+
+
+def measure_rtmr1(image: Path, disk_size: int | None = None) -> bytes:
+    """Predict RTMR1 by replaying the expected EFI boot measurements."""
+    programs = _download(image, _bootloader_paths(image))
+    return _measure_rtmr1(image, disk_size, programs)
+
+
+def measure_rtmrs(image: Path, disk_size: int | None = None) -> tuple[bytes, bytes]:
+    """Predict RTMR1 and shim's RTMR2 MOK measurements in one image scan."""
+    programs = _download(image, _bootloader_paths(image))
+    rtmr_1 = _measure_rtmr1(image, disk_size, programs)
+    # A fresh vm boot runs shim twice: first as BOOTX64.EFI and then from
+    # the distro directory. Each shim measures its MOK allowlist, denylist, and
+    # trust flag, so all six event hashes are extended into RTMR2 in boot order.
+    rtmr_2 = _extend(
+        mok_digests(programs[0])
+        + mok_digests(programs[2])
+    )
+    return rtmr_1, rtmr_2
